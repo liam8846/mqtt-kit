@@ -1,0 +1,49 @@
+[package]
+name = "mqtt-kit"
+description = "Async MQTT 3.1.1/5 toolkit with reconnect, bounded subscriptions, and rustls TLS"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+include = ["src/**", "examples/**", "tests/**", "Cargo.toml", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
+
+[package.metadata.docs.rs]
+all-features = true
+
+[features]
+default = []
+tls = [
+    "rumqttc/use-rustls-no-provider",
+    "dep:rustls",
+    "dep:rustls-pki-types",
+    "dep:webpki-roots",
+]
+tls-ring = ["tls", "rustls/ring"]
+tls-aws-lc = ["tls", "rustls/aws_lc_rs"]
+websocket = ["rumqttc/websocket"]
+
+[dependencies]
+bytes.workspace = true
+futures-core.workspace = true
+futures-util.workspace = true
+mqtt-kit-core = { version = "0.2.0", path = "../mqtt-kit-core" }
+rand.workspace = true
+rumqttc.workspace = true
+rustls = { workspace = true, optional = true }
+rustls-pki-types = { workspace = true, optional = true }
+tokio.workspace = true
+tracing.workspace = true
+url.workspace = true
+webpki-roots = { workspace = true, optional = true }
+
+[dev-dependencies]
+futures-util.workspace = true
+rumqttd.workspace = true
+
+[[example]]
+name = "tls"
+required-features = ["tls-ring"]

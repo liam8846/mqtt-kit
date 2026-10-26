@@ -1,0 +1,19 @@
+[package]
+name = "mqtt-kit-core"
+description = "Protocol-independent message, topic, options, and error types for mqtt-kit"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+include = ["src/**", "examples/**", "tests/**", "Cargo.toml", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
+
+[package.metadata.docs.rs]
+all-features = true
+
+[dependencies]
+bytes.workspace = true
+thiserror.workspace = true

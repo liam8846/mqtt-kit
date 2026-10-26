@@ -1,0 +1,62 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    name: Verify tag version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Compare tag and workspace version
+        shell: bash
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          workspace_version="$(awk '/^\[workspace.package\]/{inside=1; next} /^\[/{inside=0} inside && /^version = / {gsub(/"/, "", $3); print $3; exit}' Cargo.toml)"
+          if [[ -z "$workspace_version" || "$tag_version" != "$workspace_version" ]]; then
+            echo "tag version $tag_version does not match workspace version $workspace_version" >&2
+            exit 1
+          fi
+
+  test:
+    name: Test (${{ matrix.os }})
+    needs: version
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: ilammy/setup-nasm@e77cc62a22a374a4d0668286007cc3e3b4c17760 # v1
+        if: runner.os == 'Windows'
+      - uses: Swatinem/rust-cache@e9d7b9f1e587218970671bac74e5511ed9506e6a # v2
+      - run: cargo test --locked --workspace --all-features
+      - name: Install dependency auditor
+        if: runner.os == 'Linux'
+        run: cargo install cargo-audit --version 0.22.2 --locked
+      - name: Audit release dependencies
+        if: runner.os == 'Linux'
+        run: python3 scripts/security_audit.py
+
+  release:
+    name: Create GitHub Release
+    needs: [version, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          generate_release_notes: true
