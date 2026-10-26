@@ -71,23 +71,32 @@ async fn start_recording_proxy(
                 let (mut client_reader, mut client_writer) = inbound.into_split();
                 let (mut broker_reader, mut broker_writer) = outbound.into_split();
                 let client_to_broker = async {
-                    let mut buffer = [0_u8; 4096];
-                    loop {
-                        let count = client_reader.read(&mut buffer).await?;
-                        if count == 0 {
-                            return std::io::Result::Ok(());
+                    let transfer = async {
+                        let mut buffer = [0_u8; 4096];
+                        loop {
+                            let count = client_reader.read(&mut buffer).await?;
+                            if count == 0 {
+                                return std::io::Result::Ok(());
+                            }
+                            recorded
+                                .lock()
+                                .expect("recording mutex")
+                                .extend_from_slice(&buffer[..count]);
+                            broker_writer.write_all(&buffer[..count]).await?;
                         }
-                        recorded
-                            .lock()
-                            .expect("recording mutex")
-                            .extend_from_slice(&buffer[..count]);
-                        broker_writer.write_all(&buffer[..count]).await?;
                     }
+                    .await;
+                    // 將上行 EOF 傳給 broker，避免等待下行結束時互相阻塞。
+                    let _ = broker_writer.shutdown().await;
+                    transfer
                 };
-                tokio::select! {
-                    _ = client_to_broker => {}
-                    _ = copy(&mut broker_reader, &mut client_writer) => {}
-                }
+                let broker_to_client = async {
+                    let transfer = copy(&mut broker_reader, &mut client_writer).await;
+                    let _ = client_writer.shutdown().await;
+                    transfer
+                };
+                // 下行關閉／寫入失敗不能取消上行：DISCONNECT 可能還在等待記錄。
+                let _ = tokio::join!(client_to_broker, broker_to_client);
             });
         }
     });
@@ -351,5 +360,35 @@ async fn resubscribe_retries_when_request_channel_is_full() {
     .expect("all subscriptions recover within retry deadline");
 
     client.disconnect().await.expect("disconnect");
+    proxy_task.abort();
+}
+
+/// 下行 EOF 只能半關閉 proxy，仍必須轉送並記錄之後抵達的上行位元組。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn recording_proxy_preserves_upstream_after_broker_half_close() {
+    let target = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+        .await
+        .unwrap();
+    let address = target.local_addr().unwrap();
+    let target_task = tokio::spawn(async move {
+        let (mut stream, _) = target.accept().await.unwrap();
+        stream.shutdown().await.unwrap();
+        let mut received = Vec::new();
+        stream.read_to_end(&mut received).await.unwrap();
+        received
+    });
+    let (proxy, recorded, proxy_task) = start_recording_proxy(address).await;
+    tokio::time::timeout(Duration::from_secs(5), async {
+        let mut stream = tokio::net::TcpStream::connect(proxy).await.unwrap();
+        let mut downlink = Vec::new();
+        stream.read_to_end(&mut downlink).await.unwrap();
+        assert!(downlink.is_empty());
+        stream.write_all(&[0xE0, 0x00]).await.unwrap();
+        stream.shutdown().await.unwrap();
+        assert_eq!(target_task.await.unwrap(), [0xE0, 0x00]);
+        assert_eq!(*recorded.lock().expect("recording mutex"), [0xE0, 0x00]);
+    })
+    .await
+    .expect("proxy must preserve independent TCP half-closes");
     proxy_task.abort();
 }
