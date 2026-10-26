@@ -82,23 +82,25 @@ pub(crate) async fn run_event_loop(
 ) {
     let mut attempt = 0_u32;
     let mut connected = false;
+    let mut ever_connected = false;
     let mut resubscribe = ResubscribeQueue::default();
 
     loop {
         if *shutdown.borrow() {
-            shutdown_gracefully(&inner, &mut event_loop, connected, true).await;
+            shutdown_gracefully(&inner, &mut event_loop, connected).await;
             break;
         }
 
+        inner.registry.flush_cleanup(&inner.backend);
         let polled = tokio::select! {
             biased;
             changed = shutdown.changed() => {
                 if changed.is_err() {
-                    shutdown_gracefully(&inner, &mut event_loop, connected, false).await;
+                    shutdown_gracefully(&inner, &mut event_loop, connected).await;
                     break;
                 }
                 if *shutdown.borrow() {
-                    shutdown_gracefully(&inner, &mut event_loop, connected, true).await;
+                    shutdown_gracefully(&inner, &mut event_loop, connected).await;
                     break;
                 }
                 continue;
@@ -120,7 +122,9 @@ pub(crate) async fn run_event_loop(
                 }
                 continue;
             }
-            result = event_loop.poll() => result,
+            _ = inner.registry.changed.notified() => continue,
+            _ = inner.backend.operations.changed.notified(), if inner.registry.has_cleanup() => continue,
+            result = event_loop.poll(&inner.backend) => result,
         };
 
         match polled {
@@ -128,7 +132,12 @@ pub(crate) async fn run_event_loop(
                 connected = true;
                 attempt = 0;
 
-                if !session_present {
+                let restoring = ever_connected;
+                ever_connected = true;
+                if !session_present && !restoring {
+                    // 初次連線的要求仍在我們的有界 channel，無須重複訂閱。
+                    resubscribe.clear();
+                } else if !session_present {
                     resubscribe.clear();
                     let failed =
                         try_resubscribe_round(&inner, inner.registry.snapshot_options(), 1);
@@ -157,7 +166,11 @@ pub(crate) async fn run_event_loop(
             }
             Ok(BackendEvent::Publish(message)) => inner.registry.dispatch(*message),
             Ok(BackendEvent::DisconnectSent) => break,
-            Ok(BackendEvent::Other) => {}
+            Ok(
+                BackendEvent::Other
+                | BackendEvent::Outgoing { .. }
+                | BackendEvent::Acknowledged { .. },
+            ) => {}
             Err(BackendError::Authentication(reason)) => {
                 tracing::error!(%reason, "MQTT 認證失敗，停止重試");
                 let _send_result = inner.events.send(ConnectionEvent::ConnectionFailed {
@@ -202,7 +215,6 @@ pub(crate) async fn run_event_loop(
                                 &inner,
                                 &mut event_loop,
                                 connected,
-                                false,
                             )
                             .await;
                             break;
@@ -212,7 +224,6 @@ pub(crate) async fn run_event_loop(
                                 &inner,
                                 &mut event_loop,
                                 connected,
-                                true,
                             )
                             .await;
                             break;
@@ -235,15 +246,12 @@ fn try_resubscribe_round(
 ) -> Vec<SubscribeOptions> {
     let mut failed = Vec::new();
     for options in candidates {
-        if !inner.registry.contains(&options.filter) {
-            tracing::debug!(
-                topic_filter = %options.filter,
-                "訂閱已取消，從自動重訂閱隊列移除"
-            );
+        let Some(result) = inner.registry.resubscribe(&options.filter, |current| {
+            inner.backend.try_subscribe(current)
+        }) else {
             continue;
-        }
-
-        match inner.backend.try_subscribe(&options) {
+        };
+        match result {
             Ok(()) => {
                 tracing::info!(
                     attempt,
@@ -278,42 +286,41 @@ fn try_resubscribe_round(
     failed
 }
 
-/// 在結束事件迴圈前嘗試優雅斷線。
-///
-/// `already_requested` 為 `true` 代表呼叫端已排入 DISCONNECT，此處只需把它
-/// 排空到 socket；為 `false` 則是隱式 Drop 路徑，必須由事件迴圈自己排入。
-///
-/// 未連線時直接返回：此時 rumqttc 的 `poll()` 會為了送出 DISCONNECT 而重建
-/// TCP 連線，徒增一次無意義的連線嘗試與最長 2 秒的等待。
+/// 事件迴圈自己排入 DISCONNECT；滿載時繼續 poll，整段關閉最多兩秒。
 async fn shutdown_gracefully(
     inner: &ClientInner,
     event_loop: &mut BackendEventLoop,
     connected: bool,
-    already_requested: bool,
 ) {
     if !connected {
         return;
     }
-    if !already_requested {
-        if let Err(error) = inner.backend.try_disconnect() {
-            tracing::warn!(%error, "排入 DISCONNECT 失敗，將直接關閉連線");
-            return;
-        }
-    }
-    flush_disconnect(inner, event_loop).await;
-}
-
-async fn flush_disconnect(inner: &ClientInner, event_loop: &mut BackendEventLoop) {
     let flush = async {
+        let mut queued = false;
         loop {
-            match event_loop.poll().await {
+            if !queued {
+                queued = inner.backend.try_disconnect().is_ok();
+            }
+            match event_loop.poll(&inner.backend).await {
                 Ok(BackendEvent::DisconnectSent) | Err(_) => break,
                 Ok(BackendEvent::Publish(message)) => inner.registry.dispatch(*message),
-                Ok(BackendEvent::Connected { .. } | BackendEvent::Other) => {}
+                Ok(
+                    BackendEvent::Connected { .. }
+                    | BackendEvent::Other
+                    | BackendEvent::Outgoing { .. }
+                    | BackendEvent::Acknowledged { .. },
+                ) => {}
             }
         }
     };
-    let _flush_result = tokio::time::timeout(Duration::from_secs(2), flush).await;
+    if tokio::time::timeout(Duration::from_secs(2), flush)
+        .await
+        .is_err()
+    {
+        inner
+            .shutdown_timed_out
+            .store(true, std::sync::atomic::Ordering::Release);
+    }
 }
 
 #[cfg(test)]

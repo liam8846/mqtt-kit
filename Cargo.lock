@@ -1131,6 +1131,7 @@ name = "mqtt-kit"
 version = "0.2.0"
 dependencies = [
  "bytes",
+ "flume",
  "futures-core",
  "futures-util",
  "mqtt-kit-core",

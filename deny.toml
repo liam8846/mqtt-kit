@@ -1,0 +1,32 @@
+# cargo-deny 0.20.2; exceptions also require the exact checksum/expiry gate in scripts/security_audit.py.
+[graph]
+all-features = true
+targets = ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "x86_64-pc-windows-msvc", "aarch64-apple-darwin", "x86_64-apple-darwin"]
+
+[advisories]
+yanked = "deny"
+unmaintained = "all"
+unused-ignored-advisory = "warn"
+ignore = [
+    { id = "RUSTSEC-2026-0099", reason = "rumqttc 0.25.1 uses this version only as webpki::Error in its TLS error enum; certificate verification uses rustls-webpki 0.103.16 through rustls. Re-audit when rumqttc changes. Reviewed until 2027-01-24; exact scope enforced by security_audit.py." },
+    { id = "RUSTSEC-2026-0098", reason = "rumqttc 0.25.1 uses this version only as webpki::Error in its TLS error enum; certificate verification uses rustls-webpki 0.103.16 through rustls. Re-audit when rumqttc changes. Reviewed until 2027-01-24; exact scope enforced by security_audit.py." },
+    { id = "RUSTSEC-2026-0049", reason = "rumqttc 0.25.1 uses this version only as webpki::Error in its TLS error enum; certificate verification uses rustls-webpki 0.103.16 through rustls. Re-audit when rumqttc changes. Reviewed until 2027-01-24; exact scope enforced by security_audit.py." },
+    { id = "RUSTSEC-2026-0382", reason = "rumqttc 0.25.1 uses this version only as webpki::Error in its TLS error enum; certificate verification uses rustls-webpki 0.103.16 through rustls. Re-audit when rumqttc changes. Reviewed until 2027-01-24; exact scope enforced by security_audit.py." },
+    { id = "RUSTSEC-2026-0104", reason = "rumqttc 0.25.1 uses this version only as webpki::Error in its TLS error enum; certificate verification uses rustls-webpki 0.103.16 through rustls. Re-audit when rumqttc changes. Reviewed until 2027-01-24; exact scope enforced by security_audit.py." },
+    { id = "RUSTSEC-2025-0134", reason = "Transitive dependency of rumqttc 0.25.1. mqtt-kit migrated its own PEM parsing to rustls-pki-types. This is a maintenance notice, not a known exploitable vulnerability. Reviewed until 2027-01-24; exact scope enforced by security_audit.py." },
+ ]
+
+[licenses]
+confidence-threshold = 0.93
+allow = ["MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Unicode-3.0", "CDLA-Permissive-2.0", "Unlicense"]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+highlight = "all"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

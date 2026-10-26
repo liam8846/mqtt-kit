@@ -166,3 +166,18 @@ async fn malformed_tls_material_returns_config_errors() {
         assert!(matches!(result, Err(MqttError::InvalidConfig(_))));
     }
 }
+
+#[tokio::test]
+async fn zero_resource_budgets_are_config_errors() {
+    let base = MqttClient::builder("budgets").broker("mqtt://localhost");
+    for builder in [
+        base.clone().subscription_byte_capacity(0),
+        base.clone().buffer_byte_capacity(0),
+        base.max_subscriptions(0),
+    ] {
+        assert!(matches!(
+            builder.connect().await,
+            Err(MqttError::InvalidConfig(_))
+        ));
+    }
+}

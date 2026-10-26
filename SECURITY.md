@@ -18,7 +18,7 @@
 
 ## 依賴稽核與暫時例外
 
-執行 `python3 scripts/security_audit.py`，或依 [貢獻指南](CONTRIBUTING.md) 安裝工具。CI 於 push、PR、每週排程及 release 驗證時執行；新公告或過期例外會使檢查失敗。
+執行 `python3 scripts/security_audit.py` 與 `cargo deny --locked check --hide-inclusion-graph`，或依 [貢獻指南](CONTRIBUTING.md) 安裝工具。CI 於 push、PR、每週排程及 release 驗證時執行；新公告或過期例外會使檢查失敗。
 
 2026-10-26 修補後的實際 TLS 驗證路徑為 rustls 0.23.46、rustls-webpki 0.103.16 與 webpki-roots 1.0.10；Tokio 為 1.53.3。本專案直接的 PEM 解析已改用 rustls-pki-types。
 
@@ -38,3 +38,9 @@
 - [原始審計](docs/security-audit/2026-10-26.md)：保留修復前的歷史狀態。
 - [修復計畫](docs/security-audit/REMEDIATION_PLAN.md)。
 - [修復結果](docs/security-audit/REMEDIATION_RESULT.md)。
+
+## 供應鏈政策
+
+`deny.toml` 對 Linux、Windows、macOS 的全部 features（包含測試依賴）稽核。僅接受 crates.io registry，未知 Git／registry 來源、wildcard 依賴與已撤回版本都會被拒絕；授權依明確白名單接受，多版本先列警告以保留上游不同 major version 的相容性。Unlicense 用於既有 WebSocket 間接依賴，已明確列入允許清單。
+
+cargo-deny 固定為 0.20.2，它的公告例外不能限制 checksum 或絕對到期日；因此 CI 必須同時通過 security_audit.py，且其檢查會拒絕任何額外或缺少原因的 cargo-deny 忽略項目。這些例外的精確版本與 2027-01-24 到期限制仍然有效。

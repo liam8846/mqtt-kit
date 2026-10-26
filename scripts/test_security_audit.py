@@ -3,7 +3,7 @@ import copy
 from datetime import date
 import unittest
 
-from security_audit import evaluate
+from security_audit import evaluate, validate_deny_config
 
 
 class AuditPolicyTests(unittest.TestCase):
@@ -49,6 +49,19 @@ class AuditPolicyTests(unittest.TestCase):
         finding['advisory']['id'] = 'RUSTSEC-NEW'
         self.report['warnings']['unsound'] = [finding]
         self.assertTrue(self.errors())
+
+
+class DenyPolicyTests(unittest.TestCase):
+    def test_exact_reviewed_ids_with_reasons_are_accepted(self):
+        policy = {'exceptions': [{'advisory': 'RUSTSEC-TEST'}]}
+        config = {'advisories': {'ignore': [{'id': 'RUSTSEC-TEST', 'reason': 'reviewed'}]}}
+        self.assertEqual(validate_deny_config(policy, config), [])
+
+    def test_extra_ignore_or_reasonless_ignore_is_rejected(self):
+        policy = {'exceptions': [{'advisory': 'RUSTSEC-TEST'}]}
+        for ignores in [['RUSTSEC-TEST'], [{'id': 'RUSTSEC-TEST'}],
+                        [{'id': 'RUSTSEC-TEST', 'reason': 'reviewed'}, {'id': 'RUSTSEC-NEW', 'reason': 'unreviewed'}]]:
+            self.assertTrue(validate_deny_config(policy, {'advisories': {'ignore': ignores}}))
 
 
 if __name__ == '__main__':

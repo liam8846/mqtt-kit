@@ -46,6 +46,12 @@ jobs:
       - name: Install dependency auditor
         if: runner.os == 'Linux'
         run: cargo install cargo-audit --version 0.22.2 --locked
+      - name: Install supply-chain auditor
+        if: runner.os == 'Linux'
+        run: cargo install cargo-deny --version 0.20.2 --locked
+      - name: Audit release supply chain
+        if: runner.os == 'Linux'
+        run: cargo deny --locked check --hide-inclusion-graph
       - name: Audit release dependencies
         if: runner.os == 'Linux'
         run: python3 scripts/security_audit.py

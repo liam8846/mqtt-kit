@@ -25,11 +25,11 @@ MQTT 協定處理由 [rumqttc](https://github.com/bytebeamio/rumqtt) 負責；mq
 
 - **相同的操作方式** — 在執行時選擇 MQTT 3.1.1 或 5，共用發佈、訂閱與錯誤型別。
 - **連線恢復** — 指數退避、隨機抖動、可設定重試上限，並依 broker session 狀態恢復訂閱。
-- **可控的緩衝** — 每個訂閱都有獨立的有界佇列；慢速消費者不會阻塞網路事件迴圈。
+- **可控的緩衝** — 訂閱筆數、單佇列與整體內容位元組都有預算；topic trie 索引縮小路由比對範圍。
 - **低成本 payload 共用** — 使用 `bytes::Bytes`，複製訊息時共用 payload 儲存空間。
 - **明確的安全設定** — rustls TLS／mTLS、自訂 CA，以及衝突設定的預先驗證。
 
-> **專案狀態**：目前為 0.2.0 開發版，尚未發布至 crates.io。可使用本地 path 或 Git 依賴；0.x 版本的 API 仍可能調整。
+> **專案狀態**：公開基準為 [v0.2.0](https://github.com/liam8846/mqtt-kit/tree/v0.2.0)，尚未發布至 crates.io。本文也描述[尚未發版的開發功能](CHANGELOG.md#unreleased)；可使用本地 path 或 Git 依賴，0.x 版本的 API 仍可能調整。
 
 ## 快速開始
 
@@ -104,6 +104,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 在 3.1.1 模式使用 MQTT 5 專屬選項會回傳 `UnsupportedFeature`。Library 的 topic 比對也遵守 `$SYS` 系統 topic 的 wildcard 隔離規則。
 
+## 等待 broker 確認
+
+既有 `publish()`／`subscribe()` 保留排入佇列即返回的語意。需要確認 broker 接受要求時，使用附有整段逾時限制的 API：
+
+```rust
+use std::time::Duration;
+use mqtt_kit::{MqttClient, MqttError, PublishOptions, SubscribeOptions, QoS};
+
+async fn confirmed_roundtrip(client: &MqttClient) -> Result<(), MqttError> {
+    let deadline = Duration::from_secs(5);
+    let _subscription = client.subscribe_confirmed(
+        SubscribeOptions::new("device/commands", QoS::AtLeastOnce)?, deadline,
+    ).await?;
+    client.publish_confirmed(
+        PublishOptions::new("device/status", "ready", QoS::AtLeastOnce), deadline,
+    ).await?;
+    client.unsubscribe_confirmed("device/commands", deadline).await?;
+    Ok(())
+}
+```
+
+訂閱等候 SUBACK，QoS1 發佈等候 PUBACK，QoS2 發佈等候 PUBCOMP，取消訂閱等候 UNSUBACK。QoS0 沒有 broker 確認，因此 confirmed 發佈會拒絕 QoS0。確認代表 broker 完成對應協定階段，不代表其他應用已處理訊息。
+
+逾時或取消不會撤回已送出的發佈。確認前斷線會回報錯誤，訊息仍可能已送達，請依應用的冪等設計決定是否重試。MQTT 5 的 QoS2 遭拒絕時會重建連線，避免 rumqttc 0.25.1 的 inflight 計數持續佔用。確認訂閱若遭拒絕、逾時或被取消，本地註冊會回收，遠端清理會在有界控制佇列中安排重試。
+
 ## TLS 與安全
 
 一般用途可啟用 `tls-ring`：
@@ -159,19 +184,23 @@ let builder = MqttClient::builder("device-01")
         ReconnectPolicy::exponential(Duration::from_millis(500), Duration::from_secs(30))
             .max_retries(Some(10)),
     )
-    .subscription_capacity(128);
+    .subscription_capacity(128)
+    .subscription_byte_capacity(4 * 1024 * 1024)
+    .buffer_byte_capacity(16 * 1024 * 1024)
+    .max_subscriptions(1024);
 ```
 
 `MqttClient` 可 clone，所有 handle 共用同一條連線。`Subscription` 同時提供 `recv().await` 與 `Stream` 介面；`state()` 回報最新連線狀態，`events()` 提供重連等生命週期事件。
 
 使用前請了解以下語意：
 
-- 每個訂閱預設緩衝 128 筆訊息，滿載時**丟棄最舊訊息**並記錄警告。需要完整留存的應用應自行設計儲存與背壓。
+- 每個訂閱預設最多 128 筆、4 MiB，所有佇列合計 16 MiB。自身容量不足會丟棄最舊訊息；單筆過大或全域預算仍不足時丟棄新訊息。首次丟棄記錄警告，後續可用 `dropped_messages()` 及 `buffered_bytes()` 觀察。
 - `publish().await`／`subscribe().await` 成功表示要求已排入底層佇列，**不表示 broker 已確認**。
 - `connect().await` 啟動背景連線；需要等待握手完成時，請觀察 `state()`。
-- 關閉時使用 `disconnect().await`。最後一個 handle 被丟棄時也會嘗試關閉，但 runtime 隨即結束時無法保證 DISCONNECT 送達。
+- `disconnect().await` 在首次等待前送出關閉訊號，取消其中一位等待者仍會繼續關閉。背景最多花兩秒嘗試送達 DISCONNECT；逾時回傳 `Timeout`。最後一個 handle 被丟棄也會請求關閉。
 - keep-alive 範圍為 V3.1.1 的 1–65535 秒、V5 的 5–65535 秒；無效設定回傳 `InvalidConfig`。
-- 本地佇列按訊息筆數限制，並非整個程序的記憶體預算。
+- 位元組預算計入訊息本體、topic、payload 與 properties 的內容；同一 payload 在不同佇列分別計數。這是佇列的邏輯預算，不涵蓋 allocator、索引、網路緩衝及要求佇列，並非整個程序的 RSS 上限。
+- 訂閱串流與待清理 filter 預設上限為 1024。要求與未確認操作有界，另外保留同樣大小的取消訂閱控制容量；慢速或不回 ACK 的 broker 會產生背壓。
 
 ## 範例與文件
 
@@ -185,6 +214,17 @@ let builder = MqttClient::builder("device-01")
 | 在本機瀏覽 API | `cargo doc --locked --workspace --all-features --no-deps --open` |
 
 執行範例前請檢查程式中的 broker 位址；TLS 範例使用 `broker.example.com` 佔位網域。
+
+## 供應鏈檢查
+
+使用固定版本的 `cargo-deny 0.20.2` 執行漏洞公告、授權白名單、重複版本及來源檢查：
+
+```sh
+python3 scripts/security_audit.py
+cargo deny --locked check --hide-inclusion-graph
+```
+
+兩個指令須一起通過：精確版本、checksum 與到期日由 RustSec gate 強制檢查，`deny.toml` 的公告例外必須與它一致。撤回套件、未知 registry／Git 來源、wildcard 依賴及未允許授權會失敗；上游多版本依賴目前列為警告。CI 與 Release 都執行此檢查。
 
 ## 開發與貢獻
 

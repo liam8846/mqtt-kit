@@ -10,6 +10,8 @@ mod backend;
 mod builder;
 mod client;
 mod event_loop;
+mod operations;
+mod route_index;
 mod subscription;
 
 pub use builder::MqttClientBuilder;

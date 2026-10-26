@@ -71,6 +71,11 @@ impl FromStr for TopicFilter {
 }
 
 fn validate_filter(filter: &str) -> Result<(), MqttError> {
+    if filter.len() > usize::from(u16::MAX) {
+        return Err(MqttError::InvalidTopic(
+            "topic filter 超過 65535 bytes".into(),
+        ));
+    }
     if filter.is_empty() {
         return Err(MqttError::InvalidTopic("topic filter 不可為空".into()));
     }
@@ -95,7 +100,8 @@ fn validate_filter(filter: &str) -> Result<(), MqttError> {
 }
 
 fn valid_topic_name(topic: &str) -> bool {
-    !topic.is_empty()
+    topic.len() <= usize::from(u16::MAX)
+        && !topic.is_empty()
         && !topic.as_bytes().contains(&0)
         && !topic.contains('+')
         && !topic.contains('#')
@@ -104,6 +110,13 @@ fn valid_topic_name(topic: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn length_limit_counts_utf8_bytes() {
+        assert!(TopicFilter::new("a".repeat(65535)).is_ok());
+        assert!(TopicFilter::new("a".repeat(65536)).is_err());
+        assert!(TopicFilter::new("界".repeat(21846)).is_err());
+    }
 
     #[test]
     fn accepts_valid_filters() {

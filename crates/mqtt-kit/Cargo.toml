@@ -27,6 +27,7 @@ tls-aws-lc = ["tls", "rustls/aws_lc_rs"]
 websocket = ["rumqttc/websocket"]
 
 [dependencies]
+flume.workspace = true
 bytes.workspace = true
 futures-core.workspace = true
 futures-util.workspace = true

@@ -86,7 +86,8 @@ jobs:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
       - uses: Swatinem/rust-cache@e9d7b9f1e587218970671bac74e5511ed9506e6a # v2
-      - run: cargo check --locked -p mqtt-kit --features tls
+      - run: cargo test --locked --workspace
+      - run: cargo test --locked -p mqtt-kit --features tls --lib --test security
       - run: cargo check --locked -p mqtt-kit --features tls-ring
       - run: cargo check --locked -p mqtt-kit --features tls-aws-lc
       - run: cargo check --locked -p mqtt-kit --features tls,websocket
@@ -114,8 +115,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
       - uses: Swatinem/rust-cache@e9d7b9f1e587218970671bac74e5511ed9506e6a # v2
       - run: cargo install cargo-audit --version 0.22.2 --locked
+      - run: cargo install cargo-deny --version 0.20.2 --locked
       - run: python3 -m unittest discover -s scripts -p 'test_*.py'
       - run: python3 scripts/security_audit.py
+      - run: cargo deny --locked check --hide-inclusion-graph
 
   package:
     name: Package verification
@@ -126,8 +129,7 @@ jobs:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
       - uses: Swatinem/rust-cache@e9d7b9f1e587218970671bac74e5511ed9506e6a # v2
-      - run: cargo package --locked --workspace --all-features
-      - run: python3 scripts/check_packages.py
+      - run: python3 scripts/package_workspace.py
 
   required:
     name: CI passed
