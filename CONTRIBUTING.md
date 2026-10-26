@@ -23,19 +23,21 @@ cargo +1.86.0 check --locked --workspace --all-features
 
 ## 套件打包
 
-使用目前 stable Cargo，先執行 `cargo package --locked --workspace --all-features`，再執行 `python3 scripts/check_packages.py`。檢查會比對每個封裝內的雙授權檔、metadata 與 sibling dependency 版本。crates.io 發布流程見 [發布指南](docs/publishing.md)。
+使用目前 stable Cargo，執行 `python3 scripts/package_workspace.py`，它會在隔離目錄實際打包、編譯並檢查封裝，再將 .crate 複製至 target/package。檢查會比對每個封裝內的雙授權檔、metadata 與 sibling dependency 版本。crates.io 發布流程見 [發布指南](docs/publishing.md)。
 
 ## 安全檢查
 
-需要 Python 3.11+ 與 cargo-audit：
+需要 Python 3.11+、cargo-audit 與 cargo-deny：
 
 ```sh
 cargo install cargo-audit --version 0.22.2 --locked
+cargo install cargo-deny --version 0.20.2 --locked
 python3 -m unittest discover -s scripts -p 'test_*.py'
 python3 scripts/security_audit.py
+cargo deny --locked check --hide-inclusion-graph
 ```
 
-命令會下載最新 RustSec 資料庫。新增／變更例外需要說明可達性、精確版本、checksum 與到期日；不得只按公告 ID 全面忽略。
+命令會下載最新 RustSec 資料庫，並對所有 features 與支援平台檢查來源、授權及版本；多版本列警告，其他不符合政策的項目會失敗。`cargo-deny 0.20.2` 僅支援依 ID 忽略，因此必須搭配精確 RustSec gate，兩者的例外清單會被同步檢查。新增／變更例外需要說明可達性、精確版本、checksum 與到期日；不得只按公告 ID 全面忽略。
 
 ## 變更原則
 

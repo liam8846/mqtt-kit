@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
 """Validate the contents of Cargo-produced packages without publishing them."""
+import argparse
 from pathlib import Path
 import tarfile
 import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--package-dir', type=Path, default=ROOT / 'target' / 'package')
+args = parser.parse_args()
 workspace = tomllib.loads((ROOT / 'Cargo.toml').read_text())['workspace']['package']
 version = workspace['version']
 
 for name in ('mqtt-kit-core', 'mqtt-kit'):
     prefix = f'{name}-{version}'
-    archive = ROOT / 'target' / 'package' / f'{prefix}.crate'
+    archive = args.package_dir / f'{prefix}.crate'
     with tarfile.open(archive, 'r:gz') as package:
         def read(relative):
             stream = package.extractfile(f'{prefix}/{relative}')

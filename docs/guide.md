@@ -140,17 +140,15 @@ client.publish_with(
 ## 訂閱、路由與背壓
 
 `Subscription` 實作 `futures_core::Stream<Item = Message>`，也提供不需要 extension trait 的
-`recv().await`。每個 subscription 有獨立 bounded queue，預設容量為 128，可用 builder 的
-`subscription_capacity()` 調整。事件迴圈絕不等待消費者；queue 滿時會丟棄最舊訊息並送出
-`tracing::warn!`，因此最新資料仍可前進。
+`recv().await`。每個 subscription 有獨立 bounded queue，預設為 128 筆／4 MiB，所有佇列合計 16 MiB；可用 `subscription_capacity()`、`subscription_byte_capacity()`、`buffer_byte_capacity()` 調整。事件迴圈絕不等待消費者；自身 queue 滿時會丟棄最舊訊息，單筆過大或全域預算不足則丟棄新訊息；首次丟棄送出 `tracing::warn!`，累計數可由 `dropped_messages()` 觀察。
 
 本地路由使用已驗證的 `TopicFilter`，完整支援 `+`、`#`、空 topic 層級，以及 MQTT 規範對
 `$SYS` 類系統 topic 的隔離規則。同一 filter 可有多個本地 `Subscription`；只有最後一個被 Drop
-或主動取消時才向 broker 排入 UNSUBSCRIBE。若需要得知取消操作是否成功，使用
+或主動取消時才安排 UNSUBSCRIBE；滿載時保留有界清理項目，稍後重試。若需要得知取消操作是否成功，使用
 `subscription.unsubscribe().await`；`client.unsubscribe(filter).await` 則關閉相同 filter 的所有
 本地串流。
 
-同一個 filter 重複呼叫 `subscribe` 時，註冊表保存的 QoS 與 MQTT 5 訂閱選項以最後一次呼叫為準；
+同一個 filter 重複呼叫 `subscribe` 時，註冊表保存的 QoS 與 MQTT 5 訂閱選項以仍存活的最新本地訂閱為準；
 若之後需要自動重訂閱，會使用這組最新 options。既有的本地 `Subscription` 串流仍會各自收到符合
 filter 的訊息。
 
@@ -176,11 +174,11 @@ filter 的訊息。
 `ReconnectPolicy::delay_for(attempt, random_unit)` 及 `delays_with()` 是純計算 API，可在應用測試中
 注入固定亂數。`attempt` 從 1 起算；`max_retries: None` 表示無限重試。
 
-關閉生命週期有兩條路徑。`disconnect().await` 會排入 DISCONNECT、等待背景任務將封包排空後
-才返回，是已連線時需要確定性優雅斷線應採用的方式。最後一個 `MqttClient` handle 被 Drop 時，
-背景任務也會嘗試送出 DISCONNECT 後關閉；不過 Rust 沒有 async Drop，若應用隨即結束 Tokio
-runtime，背景任務可能在封包送達前被取消，因此此路徑不保證送達。無論顯式或隱式關閉，當下若
-未連線都會直接停止，不會為了 DISCONNECT 額外重建 TCP 連線。
+`disconnect().await` 在第一次等待前送出關閉訊號，事件迴圈自己排入 DISCONNECT，整段最多兩秒；逾時回傳 Timeout。取消等待者不會取消關閉，多位等待者共享相同結果。最後一個 handle 被 Drop 也會請求關閉；runtime 被摧毀時不保證封包送達，但狀態會標記為 Closed，串流與待確認要求會被喚醒結束。未連線時直接關閉。
+
+確認 API 與取消、逾時的語意見 [README](../README.md#等待-broker-確認)。`subscribe_confirmed()` 等待成功 SUBACK；`publish_confirmed()` 等待 PUBACK（QoS1）或 PUBCOMP（QoS2）；`unsubscribe_confirmed()` 等待 UNSUBACK。QoS0 不提供 broker 確認。確認前斷線會回報 Connection，已送出的操作不會被撤回。
+
+本地路由採 arena topic trie，保留 wildcard 與 $SYS 行為，不必對每筆訊息掃描無關 filter。內容位元組預算包含訊息本體與字串／payload／properties 長度，各佇列分別計數，不是程序 RSS 預算；closed 串流仍可讀取緩衝，因此在讀完或 Drop 前仍佔用預算。
 
 ## MQTT 3.1.1 與 MQTT 5 差異
 
@@ -316,3 +314,5 @@ release notes 的 GitHub Release。版本不一致或任一平台測試失敗都
 ## 依賴安全
 
 持續安全檢查使用 `python3 scripts/security_audit.py`，會核對最新 RustSec 公告。精確例外與到期日見 `scripts/security-exceptions.json`；說明見 [安全政策](../SECURITY.md)。Debug 會遮蔽 Builder 中的帳密、URL、遺囑內容、TLS 設定及 TlsOptions 的憑證與私鑰。應用仍應避免將 Message 或 PublishOptions 中的敏感 payload 寫入日誌。
+
+供應鏈另執行 `cargo deny --locked check --hide-inclusion-graph`，必須與精確 RustSec gate 一起通過；詳見 [安全政策](../SECURITY.md#供應鏈政策)。

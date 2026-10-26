@@ -33,9 +33,26 @@ pub enum MqttError {
     #[error("MQTT 協定錯誤：{0}")]
     Protocol(String),
 
+    /// Broker 明確拒絕要求。
+    #[error("Broker 拒絕 {operation}：{reason}")]
+    BrokerRejected {
+        /// 被拒絕的 MQTT 操作。
+        operation: &'static str,
+        /// Broker reason code 的文字表示。
+        reason: String,
+    },
+
+    /// 資源預算已達上限。
+    #[error("MQTT 資源上限：{0}")]
+    ResourceLimit(String),
+
     /// 操作在期限內未完成。
     #[error("MQTT 操作逾時")]
     Timeout,
+
+    /// 訂閱在要求排入前已被取消。
+    #[error("MQTT 訂閱已被取消")]
+    SubscriptionClosed,
 
     /// Client 已關閉，不能再接受操作。
     #[error("MQTT client 已關閉")]

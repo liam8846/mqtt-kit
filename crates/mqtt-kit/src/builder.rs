@@ -25,6 +25,9 @@ pub struct MqttClientBuilder {
     reconnect: ReconnectPolicy,
     request_channel_capacity: usize,
     subscription_capacity: usize,
+    subscription_byte_capacity: usize,
+    buffer_byte_capacity: usize,
+    max_subscriptions: usize,
 }
 
 impl std::fmt::Debug for MqttClientBuilder {
@@ -51,6 +54,12 @@ impl std::fmt::Debug for MqttClientBuilder {
             .field("reconnect", &self.reconnect)
             .field("request_channel_capacity", &self.request_channel_capacity)
             .field("subscription_capacity", &self.subscription_capacity)
+            .field(
+                "subscription_byte_capacity",
+                &self.subscription_byte_capacity,
+            )
+            .field("buffer_byte_capacity", &self.buffer_byte_capacity)
+            .field("max_subscriptions", &self.max_subscriptions)
             .finish()
     }
 }
@@ -78,6 +87,9 @@ impl MqttClientBuilder {
             reconnect: ReconnectPolicy::default(),
             request_channel_capacity: 256,
             subscription_capacity: 128,
+            subscription_byte_capacity: 4 * 1024 * 1024,
+            buffer_byte_capacity: 16 * 1024 * 1024,
+            max_subscriptions: 1024,
         }
     }
 
@@ -174,6 +186,28 @@ impl MqttClientBuilder {
         self
     }
 
+    /// 設定每個訂閱的緩衝內容位元組預算；預設 4 MiB。
+    #[must_use]
+    pub fn subscription_byte_capacity(mut self, bytes: usize) -> Self {
+        self.subscription_byte_capacity = bytes;
+        self
+    }
+
+    /// 設定所有本地佇列合計的內容位元組預算；預設 16 MiB。
+    /// 共用 payload 在每個佇列分別計數；不代表整個程序的實際記憶體上限。
+    #[must_use]
+    pub fn buffer_byte_capacity(mut self, bytes: usize) -> Self {
+        self.buffer_byte_capacity = bytes;
+        self
+    }
+
+    /// 設定本地串流與待清理 filter 的數量上限；預設 1024。
+    #[must_use]
+    pub fn max_subscriptions(mut self, count: usize) -> Self {
+        self.max_subscriptions = count;
+        self
+    }
+
     /// 驗證組態、建立 backend，並啟動背景事件迴圈。
     pub async fn connect(self) -> Result<MqttClient, MqttError> {
         self.validate()?;
@@ -231,6 +265,11 @@ impl MqttClientBuilder {
             self.protocol,
             self.reconnect,
             self.subscription_capacity,
+            crate::subscription::SubscriptionRegistry::new(
+                self.max_subscriptions,
+                self.subscription_byte_capacity,
+                self.buffer_byte_capacity,
+            ),
         ))
     }
 
@@ -285,6 +324,14 @@ impl MqttClientBuilder {
                 "subscription_capacity 必須大於零".into(),
             ));
         }
+        if self.subscription_byte_capacity == 0
+            || self.buffer_byte_capacity == 0
+            || self.max_subscriptions == 0
+        {
+            return Err(MqttError::InvalidConfig(
+                "位元組預算與 max_subscriptions 必須大於零".into(),
+            ));
+        }
         self.reconnect.validate()?;
         if let Some(will) = &self.last_will {
             validate_publish_topic(&will.topic)?;
@@ -329,7 +376,8 @@ fn parse_broker(input: &str) -> Result<ParsedBroker, MqttError> {
 }
 
 pub(crate) fn validate_publish_topic(topic: &str) -> Result<(), MqttError> {
-    if topic.is_empty()
+    if topic.len() > usize::from(u16::MAX)
+        || topic.is_empty()
         || topic.as_bytes().contains(&0)
         || topic.contains('+')
         || topic.contains('#')

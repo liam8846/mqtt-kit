@@ -43,6 +43,16 @@ def evaluate(report, policy, lockfile, today):
     return accepted, errors
 
 
+def validate_deny_config(policy, deny):
+    """cargo-deny 0.20.2 ignores by ID; the exact RustSec gate must stay paired."""
+    ignores = deny.get('advisories', {}).get('ignore', [])
+    expected = {exception['advisory'] for exception in policy['exceptions']}
+    configured = [entry.get('id') for entry in ignores if isinstance(entry, dict) and entry.get('reason')]
+    if len(configured) != len(ignores) or len(set(configured)) != len(configured) or set(configured) != expected:
+        return ['cargo-deny advisory ignores must exactly match the reviewed policy, with reasons']
+    return []
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--db', help='Optional RustSec database path')
@@ -65,6 +75,8 @@ def main():
         policy = json.loads((ROOT / 'scripts/security-exceptions.json').read_text())
         lockfile = tomllib.loads((ROOT / 'Cargo.lock').read_text())
         accepted, errors = evaluate(report, policy, lockfile, datetime.now(timezone.utc).date())
+        deny = tomllib.loads((ROOT / 'deny.toml').read_text())
+        errors.extend(validate_deny_config(policy, deny))
     except (ValueError, KeyError, TypeError) as error:
         print(f'Audit failed: {error}\n{result.stderr}', file=sys.stderr)
         return 1
