@@ -29,7 +29,7 @@ MQTT 協定處理由 [rumqttc](https://github.com/bytebeamio/rumqtt) 負責；mq
 - **低成本 payload 共用** — 使用 `bytes::Bytes`，複製訊息時共用 payload 儲存空間。
 - **明確的安全設定** — rustls TLS／mTLS、自訂 CA，以及衝突設定的預先驗證。
 
-> **專案狀態**：公開基準為 [v0.2.0](https://github.com/liam8846/mqtt-kit/tree/v0.2.0)，尚未發布至 crates.io。本文也描述[尚未發版的開發功能](CHANGELOG.md#unreleased)；可使用本地 path 或 Git 依賴，0.x 版本的 API 仍可能調整。
+> **專案狀態**：目前版本為 [v0.3.0](https://github.com/liam8846/mqtt-kit/tree/v0.3.0)，尚未發布至 crates.io。變更詳見 [CHANGELOG](CHANGELOG.md)；可使用本地 path 或 Git 依賴，0.x 版本的 API 仍可能調整。
 
 ## 快速開始
 

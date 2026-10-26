@@ -1128,7 +1128,7 @@ dependencies = [
 
 [[package]]
 name = "mqtt-kit"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "bytes",
  "flume",
@@ -1148,7 +1148,7 @@ dependencies = [
 
 [[package]]
 name = "mqtt-kit-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "bytes",
  "thiserror 2.0.19",
