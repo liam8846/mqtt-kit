@@ -44,7 +44,7 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 也可以直接使用 Git 依賴：
 
 ```toml
-mqtt-kit = { git = "https://github.com/liam8846/mqtt-kit", features = ["tls-ring"] }
+mqtt-kit = { git = "https://github.com/liam8846/mqtt-kit", features = ["tls-aws-lc"] }
 ```
 
 正式應用建議固定已審查的 `rev`，並保留 `Cargo.lock`。
@@ -131,10 +131,10 @@ async fn confirmed_roundtrip(client: &MqttClient) -> Result<(), MqttError> {
 
 ## TLS 與安全
 
-一般用途可啟用 `tls-ring`：
+一般用途建議啟用 `tls-aws-lc`：
 
 ```toml
-mqtt-kit = { path = "../mqtt-kit/crates/mqtt-kit", features = ["tls-ring"] }
+mqtt-kit = { path = "../mqtt-kit/crates/mqtt-kit", features = ["tls-aws-lc"] }
 ```
 
 ```rust
@@ -165,9 +165,11 @@ async fn secure_client() -> Result<MqttClient, mqtt_kit::MqttError> {
 | Feature | 用途 |
 | :--- | :--- |
 | `tls` | 啟用 rustls，crypto provider 由應用提供 |
-| `tls-ring` | TLS + ring provider，適合一般用途 |
-| `tls-aws-lc` | TLS + AWS-LC provider；Windows 建置需要 CMake／NASM |
+| `tls-ring` | TLS + ring provider，保留相容選項 |
+| `tls-aws-lc` | TLS + AWS-LC provider，主要推薦方案；建置需求見下方 |
 | `websocket` | 啟用 `ws://`；`wss://` 另需 TLS feature |
+
+目前鎖定 aws-lc-rs 1.18.2／aws-lc-sys 0.46.0。一般非 FIPS 建置需要 C/C++ 編譯器；Windows x86／x86-64 建議安裝 NASM，CI 也使用 NASM。標準非 FIPS 建置不必強制安裝 CMake；FIPS 或特殊建置另有工具需求，詳見 [AWS-LC 建置文件](https://aws.github.io/aws-lc-rs/requirements/index.html)。
 
 `tls-aws-lc` 本身不代表 FIPS 模式。若兩種 provider feature 同時啟用，優先使用應用已安裝的全域 provider，否則選 AWS-LC。詳見[provider 配置](docs/guide.md#tls-與-mtls)。
 

@@ -10,7 +10,7 @@ Async MQTT 3.1.1／5 工具庫，基於 Tokio 與 rumqttc，提供自動重連�
 
 ```toml
 [dependencies]
-mqtt-kit = { git = "https://github.com/liam8846/mqtt-kit", features = ["tls-ring"] }
+mqtt-kit = { git = "https://github.com/liam8846/mqtt-kit", features = ["tls-aws-lc"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
 
@@ -53,9 +53,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 | --- | --- |
 | 預設 | 明文 TCP；協定版本在 runtime 選擇 |
 | tls | rustls TLS 機制；由應用提供 crypto provider 或 ClientConfig |
-| tls-ring | TLS + ring provider |
-| tls-aws-lc | TLS + AWS-LC provider |
+| tls-ring | TLS + ring provider，相容選項 |
+| tls-aws-lc | TLS + AWS-LC provider，主要推薦方案 |
 | websocket | ws://，搭配 TLS feature 可使用 wss:// |
+
+目前鎖定 aws-lc-rs 1.18.2／aws-lc-sys 0.46.0。一般非 FIPS 建置需要 C/C++ 編譯器；Windows x86／x86-64 建議安裝 NASM，CI 也使用 NASM。標準非 FIPS 建置不必強制安裝 CMake；FIPS 或特殊建置另有工具需求，詳見 [AWS-LC 建置文件](https://aws.github.io/aws-lc-rs/requirements/index.html)。
 
 跨網路傳送帳密或敏感資料時請使用 mqtts://／wss://。TLS 設定搭配明文 scheme 會回傳錯誤。訊息佇列滿載時會丟棄最舊訊息；publish／subscribe 成功代表要求已排入底層佇列，並非 broker 確認。
 
