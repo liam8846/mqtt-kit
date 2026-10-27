@@ -47,20 +47,20 @@ futures-util = "0.3" # 使用 StreamExt 時才需要
 | feature | 功能 |
 |---|---|
 | `tls` | 啟用 rustls TLS 機制，但不選擇 crypto provider；適合由最終 binary 安裝全域 provider 或傳入完整 `ClientConfig` |
-| `tls-ring` | 啟用 `tls` 與 ring provider；跨平台建置負擔低，適合一般用途 |
-| `tls-aws-lc` | 啟用 `tls` 與 AWS-LC provider；適合需要 AWS-LC 或進一步配置 FIPS 的應用 |
+| `tls-ring` | 啟用 `tls` 與 ring provider；保留為相容選項 |
+| `tls-aws-lc` | 啟用 `tls` 與 AWS-LC provider；主要推薦方案，亦可由應用進一步配置 FIPS |
 | `websocket` | 支援 `ws://`；`wss://` 需同時啟用 `tls` |
 
 例如：
 
 ```toml
-mqtt-kit = { path = "crates/mqtt-kit", features = ["tls-ring", "websocket"] }
+mqtt-kit = { path = "crates/mqtt-kit", features = ["tls-aws-lc", "websocket"] }
 ```
 
-一般跨平台應用建議選 `tls-ring`。若需要 FIPS，應選 AWS-LC 路線，並由最終 binary
+一般跨平台應用建議選 `tls-aws-lc`。若需要 FIPS，應選 AWS-LC 路線，並由最終 binary
 額外啟用 rustls 的 `fips` feature、建立 FIPS provider，再透過全域 provider 或
-`tls_client_config()` 套用；`tls-aws-lc` 本身不等同已完成 FIPS 設定。Windows 編譯
-`tls-aws-lc` 需要 CMake 與 NASM。Cargo feature 會做聯集，因此 `tls-ring` 與 `tls-aws-lc`
+`tls_client_config()` 套用；`tls-aws-lc` 本身不等同已完成 FIPS 設定。建置工具需求見下方「跨平台」。
+Cargo feature 會做聯集，因此 `tls-ring` 與 `tls-aws-lc`
 被不同依賴同時啟用是合法情境。
 
 TLS 設定不可搭配 `mqtt://` 或 `ws://`，否則回傳 `InvalidConfig`；未啟用 TLS feature 卻呼叫 `tls()` 會回傳 `UnsupportedFeature`。keep-alive 的允許範圍為 V3.1.1 的 1–65535 秒與 V5 的 5–65535 秒，超出範圍會回傳 `InvalidConfig`。
@@ -196,7 +196,7 @@ filter 的訊息。
 ## TLS 與 mTLS
 
 使用 `TlsOptions` 時，未指定自訂 CA 會使用 `webpki-roots` 內建的 Mozilla 根憑證，不讀取 OS
-憑證庫，因此 Linux、Windows、macOS 與 WSL 行為一致。最簡單的做法是啟用 `tls-ring`：
+憑證庫，因此 Linux、Windows、macOS 與 WSL 行為一致。建議啟用 `tls-aws-lc`：
 
 ```rust,no_run
 # use mqtt_kit::{MqttClient, TlsOptions};
@@ -228,7 +228,7 @@ Library 不會呼叫 `CryptoProvider::install_default()`；選擇程序依序為
 所以兩個 provider feature 同時開啟時會偏好 AWS-LC，與 rustls 上游預設一致；binary 安裝的
 全域 provider 永遠優先。安裝 process-wide 預設值是最終 binary 的職權，不應由 library 代替決定。
 
-若要使用任意 provider、FIPS 或客製憑證驗證器，可直接傳入完整設定。以下由 binary 明確以 ring
+若要使用任意 provider、FIPS 或客製憑證驗證器，可直接傳入完整設定。以下由 binary 明確以 AWS-LC
 建立設定；這條路徑會略過上述 provider 選擇：
 
 ```rust,no_run
@@ -238,7 +238,7 @@ use mqtt_kit::MqttClient;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let provider = Arc::new(rustls::crypto::ring::default_provider());
+    let provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
     let mut roots = rustls::RootCertStore::empty();
     roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
     let config = rustls::ClientConfig::builder_with_provider(provider)
@@ -280,14 +280,20 @@ breaking change。`tls_client_config()` 與 `tls(TlsOptions)` 互斥；同時設
 
 本 workspace 不使用平台特定 API 或 `cfg(unix)` / `cfg(windows)` 分支。網路與 async runtime
 由 Tokio 提供；TLS 使用 rustls 與一致的 `webpki-roots`，不依賴 OpenSSL 或 OS certificate
-store。`tls-ring` 不需要 AWS-LC 的 CMake/NASM 建置鏈；選用 `tls-aws-lc` 時，Windows 需備妥
-CMake 與 NASM。支援目標為 Linux、Windows、macOS，亦支援 WSL。
+store。支援目標為 Linux、Windows、macOS，亦支援 WSL。
+
+目前鎖定 aws-lc-rs 1.18.2／aws-lc-sys 0.46.0。一般非 FIPS 建置需要 C/C++ 編譯器，
+標準建置不必強制安裝 CMake。Windows x86／x86-64 建議安裝 NASM；CI 使用 NASM
+從原始碼編譯組合語言。Windows x86-64 非 FIPS 建置亦可按上游說明明確啟用預編譯 NASM
+objects。FIPS、sanitizer 或停用組合語言等特殊建置需另外核對工具需求。
+詳見 [AWS-LC 建置需求](https://aws.github.io/aws-lc-rs/requirements/index.html) 與
+[Windows 說明](https://aws.github.io/aws-lc-rs/requirements/windows.html)。
 
 ## Examples 與驗證
 
 - `cargo run -p mqtt-kit --example basic_pubsub`
 - `cargo run -p mqtt-kit --example v5_properties`
-- `cargo run -p mqtt-kit --features tls-ring --example tls`
+- `cargo run -p mqtt-kit --features tls-aws-lc --example tls`
 
 整合測試在程序內啟動 `rumqttd`，所有 listener 先向 OS 取得隨機埠，不需要 Docker。重連測試
 另使用 Tokio TCP proxy 主動切斷既有連線，以驗證重連後原 subscription 仍可接收訊息。

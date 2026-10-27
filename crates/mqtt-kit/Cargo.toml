@@ -47,4 +47,4 @@ rumqttd.workspace = true
 
 [[example]]
 name = "tls"
-required-features = ["tls-ring"]
+required-features = ["tls-aws-lc"]

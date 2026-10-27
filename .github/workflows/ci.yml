@@ -60,9 +60,12 @@ jobs:
       - uses: ilammy/setup-nasm@e77cc62a22a374a4d0668286007cc3e3b4c17760 # v1
         if: runner.os == 'Windows'
       - uses: Swatinem/rust-cache@e9d7b9f1e587218970671bac74e5511ed9506e6a # v2
-      - run: cargo test --locked --workspace --all-features
+      - name: Test with AWS-LC and WebSocket
+        run: cargo test --locked --workspace --features tls-aws-lc,websocket
+      - name: Test provider feature unification
+        run: cargo test --locked --workspace --all-features
       - run: cargo build --locked --workspace
-      - run: cargo build --locked -p mqtt-kit --examples --all-features
+      - run: cargo build --locked -p mqtt-kit --examples --features tls-aws-lc,websocket
 
   msrv:
     name: MSRV (1.86)
@@ -88,8 +91,7 @@ jobs:
       - uses: Swatinem/rust-cache@e9d7b9f1e587218970671bac74e5511ed9506e6a # v2
       - run: cargo test --locked --workspace
       - run: cargo test --locked -p mqtt-kit --features tls --lib --test security
-      - run: cargo check --locked -p mqtt-kit --features tls-ring
-      - run: cargo check --locked -p mqtt-kit --features tls-aws-lc
+      - run: cargo test --locked -p mqtt-kit --features tls-ring --lib --test security
       - run: cargo check --locked -p mqtt-kit --features tls,websocket
 
   doc:

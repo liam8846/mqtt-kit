@@ -42,7 +42,10 @@ jobs:
       - uses: ilammy/setup-nasm@e77cc62a22a374a4d0668286007cc3e3b4c17760 # v1
         if: runner.os == 'Windows'
       - uses: Swatinem/rust-cache@e9d7b9f1e587218970671bac74e5511ed9506e6a # v2
-      - run: cargo test --locked --workspace --all-features
+      - name: Test with AWS-LC and WebSocket
+        run: cargo test --locked --workspace --features tls-aws-lc,websocket
+      - name: Test provider feature unification
+        run: cargo test --locked --workspace --all-features
       - name: Install dependency auditor
         if: runner.os == 'Linux'
         run: cargo install cargo-audit --version 0.22.2 --locked

@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- TLS 文件、範例與跨平台主要測試推薦使用 AWS-LC；保留 ring、bare TLS 與應用程式自訂 provider。
+- 補齊 AWS-LC 單獨啟用時的自訂 ClientConfig 測試，保留雙 provider feature 聯集驗證，更新原生建置工具說明。
+
 ## 0.3.0 — 2026-10-27
 
 - 修正訂閱要求在 await 時被取消後遺留本地註冊的問題，恢復仍存活的最新同 filter 設定。

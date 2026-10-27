@@ -666,36 +666,36 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "tls-ring")]
-    fn ring_client_config() -> std::sync::Arc<rustls::ClientConfig> {
-        let provider = std::sync::Arc::new(rustls::crypto::ring::default_provider());
+    #[cfg(any(feature = "tls-ring", feature = "tls-aws-lc"))]
+    fn provider_client_config() -> std::sync::Arc<rustls::ClientConfig> {
+        let provider = crypto_provider().expect("TLS provider");
         let config = rustls::ClientConfig::builder_with_provider(provider)
             .with_safe_default_protocol_versions()
-            .expect("ring provider 應支援 rustls 的安全預設版本")
+            .expect("TLS provider 應支援 rustls 的安全預設版本")
             .with_root_certificates(rustls::RootCertStore::empty())
             .with_no_client_auth();
         std::sync::Arc::new(config)
     }
 
-    #[cfg(feature = "tls-ring")]
+    #[cfg(any(feature = "tls-ring", feature = "tls-aws-lc"))]
     #[tokio::test]
     async fn tls_options_and_client_config_are_mutually_exclusive() {
         let result = MqttClient::builder("id")
             .broker("mqtts://localhost")
             .tls(TlsOptions::new())
-            .tls_client_config(ring_client_config())
+            .tls_client_config(provider_client_config())
             .connect()
             .await;
 
         assert!(matches!(result, Err(MqttError::InvalidConfig(_))));
     }
 
-    #[cfg(feature = "tls-ring")]
+    #[cfg(any(feature = "tls-ring", feature = "tls-aws-lc"))]
     #[tokio::test]
     async fn accepts_complete_tls_client_config() {
         let result = MqttClient::builder("id")
             .broker("mqtts://localhost")
-            .tls_client_config(ring_client_config())
+            .tls_client_config(provider_client_config())
             .connect()
             .await;
 

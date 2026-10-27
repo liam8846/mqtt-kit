@@ -9,17 +9,19 @@
 ```sh
 cargo fmt --all --check
 cargo clippy --locked --workspace --all-features --all-targets -- -D warnings
+cargo test --locked --workspace --features tls-aws-lc,websocket
 cargo test --locked --workspace --all-features
 cargo test --locked --workspace
 cargo check --locked -p mqtt-kit --features tls
-cargo check --locked -p mqtt-kit --features tls-ring
-cargo check --locked -p mqtt-kit --features tls-aws-lc
+cargo test --locked -p mqtt-kit --features tls-ring --lib --test security
 cargo check --locked -p mqtt-kit --features tls,websocket
 cargo doc --locked --workspace --all-features --no-deps
 cargo +1.86.0 check --locked --workspace --all-features
 ```
 
-測試會綁定 loopback 臨時埠。TLS 的 AWS-LC provider 需要原生編譯工具，Windows 另需 CMake／NASM。請保留 Cargo.lock，讓本地與 CI 使用相同依賴版本。
+測試會綁定 loopback 臨時埠。主要 TLS 測試使用 AWS-LC，另驗證 ring 相容性與兩種 provider 同時啟用的情境。
+目前鎖定版本的一般非 FIPS 建置需要 C/C++ 編譯器，Windows x86／x86-64 建議安裝 NASM，
+標準建置不必強制安裝 CMake；詳見[跨平台建置說明](docs/guide.md#跨平台)。請保留 Cargo.lock，讓本地與 CI 使用相同依賴版本。
 
 ## 套件打包
 
